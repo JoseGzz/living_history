@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, X, Info, BookOpen, ExternalLink, ArrowLeft }
 
 // URL where your Databricks job will save the daily JSON file
 // Replace this with your public Cloudflare R2 or S3 Bucket URL
-const DATA_URL = '[https://pub-d607727348954e568a4fb203bfcf4031.r2.dev](https://pub-d607727348954e568a4fb203bfcf4031.r2.dev)';
+const DATA_URL = 'https://pub-d607727348954e568a4fb203bfcf4031.r2.dev';
 
 
 export default function App() {
