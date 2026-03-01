@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight, X, Info, BookOpen, ExternalLink, ArrowLeft }
 // Replace this with your public Cloudflare R2 or S3 Bucket URL
 const DATA_URL = 'https://pub-d607727348954e568a4fb203bfcf4031.r2.dev/timeline_events.json';
 
-
 export default function App() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
