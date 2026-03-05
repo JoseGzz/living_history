@@ -1,14 +1,47 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, X, Info, BookOpen, ExternalLink, ArrowLeft } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Info, BookOpen, ExternalLink, ArrowLeft, ArrowRight, ArrowUp, Moon, Sun, Clock } from 'lucide-react';
+import './index.css';
 
-// Replace this with your actual public Cloudflare R2 URL
-const DATA_URL = 'https://pub-d607727348954e568a4fb203bfcf4031.r2.dev/timeline_events.json';
+const DATA_URL = '[https://pub-d607727348954e568a4fb203bfcf4031.r2.dev/timeline_events.json](https://pub-d607727348954e568a4fb203bfcf4031.r2.dev/timeline_events.json)';
+
+// --- UTILS ---
+// Robust parser to handle stringified Python lists like "['url1'\n 'url2']"
+const parseSources = (sourcesStr) => {
+  if (!sourcesStr) return [];
+  if (Array.isArray(sourcesStr)) return sourcesStr;
+  if (typeof sourcesStr === 'string') {
+    if (sourcesStr === '[]') return [];
+    try {
+      // Try standard JSON parse first (replacing single quotes with double)
+      return JSON.parse(sourcesStr.replace(/'/g, '"'));
+    } catch (e) {
+      // Fallback: extract anything inside single quotes
+      const matches = sourcesStr.match(/'([^']+)'/g);
+      if (matches) {
+        return matches.map(m => m.replace(/'/g, ''));
+      }
+    }
+  }
+  return [];
+};
+
+const getDomain = (url) => {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace('www.', '');
+  } catch (e) {
+    return url;
+  }
+};
 
 export default function App() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  // Theme State
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
   // Navigation State
   const [selectedTopic, setSelectedTopic] = useState('Politics');
   const [selectedSituation, setSelectedSituation] = useState(null);
@@ -40,7 +73,7 @@ export default function App() {
   // Derived Data
   const topics = useMemo(() => {
     const uniqueTopics = [...new Set(data.map(item => item.topic_name))];
-    const priority = ['Politics', 'Technology', 'Economics'];
+    const priority = ['Politics', 'Technology', 'Economy'];
     return uniqueTopics.sort((a, b) => {
       const indexA = priority.indexOf(a);
       const indexB = priority.indexOf(b);
@@ -54,24 +87,91 @@ export default function App() {
   const situationsForTopic = useMemo(() => {
     if (!selectedTopic) return [];
     const filtered = data.filter(item => item.topic_name === selectedTopic);
-    const uniqueSituations = [...new Set(filtered.map(item => item.situation_name))];
-    return uniqueSituations.map(name => {
-      const item = filtered.find(i => i.situation_name === name);
-      return { id: item.situation_id, name: item.situation_name };
+    const uniqueSituationNames = [...new Set(filtered.map(item => item.situation_name))];
+    const validSituations = new Set(data.map(d => d.situation_name));
+
+    const enrichedSituations = uniqueSituationNames.map(name => {
+      const evts = filtered.filter(i => i.situation_name === name);
+      const item = evts[0];
+      
+      let prevSits = new Set();
+      let nextSits = new Set();
+      evts.forEach(e => {
+        if (e.previous_situation && e.previous_situation !== name && validSituations.has(e.previous_situation)) {
+          prevSits.add(e.previous_situation);
+        }
+        if (e.next_situation && e.next_situation !== name && validSituations.has(e.next_situation)) {
+          nextSits.add(e.next_situation);
+        }
+      });
+
+      return { 
+        id: item.situation_id, 
+        name: name,
+        eventCount: evts.length,
+        prevSituations: Array.from(prevSits),
+        nextSituations: Array.from(nextSits),
+        latestDate: new Date(Math.max(...evts.map(e => new Date(e.event_date))))
+      };
     });
+
+    return enrichedSituations.sort((a, b) => b.latestDate - a.latestDate);
   }, [selectedTopic, data]);
 
   // Handlers
-  const handleOpenSituation = (situationName) => {
-    const events = data
+  const handleOpenSituation = useCallback((situationName, jumpType = 'default') => {
+    const rawEvents = data
       .filter(item => item.situation_name === situationName)
       .sort((a, b) => new Date(a.event_date) - new Date(b.event_date)); 
     
-    setStoryEvents(events);
+    const validSituations = new Set(data.map(d => d.situation_name));
+    const prevSituations = new Set();
+    const nextSituations = new Set();
+
+    rawEvents.forEach(e => {
+        if (e.previous_situation && e.previous_situation !== situationName && validSituations.has(e.previous_situation)) {
+            prevSituations.add(e.previous_situation);
+        }
+        if (e.next_situation && e.next_situation !== situationName && validSituations.has(e.next_situation)) {
+            nextSituations.add(e.next_situation);
+        }
+    });
+
+    const builtEvents = [];
+    
+    if (prevSituations.size > 0) {
+        builtEvents.push({ type: 'prev_card', targets: Array.from(prevSituations) });
+    }
+
+    rawEvents.forEach(e => builtEvents.push({ type: 'event', data: e }));
+
+    if (nextSituations.size > 0) {
+        builtEvents.push({ type: 'next_card', targets: Array.from(nextSituations) });
+    }
+
+    setStoryEvents(builtEvents);
     setSelectedSituation(situationName);
-    setCurrentEventIndex(0);
     setIsDiveDeeperOpen(false);
-  };
+
+    let startIndex = 0;
+    if (jumpType === 'next') {
+        startIndex = builtEvents.findIndex(e => e.type === 'event');
+    } else {
+        let lastEventIdx = builtEvents.length - 1;
+        while (lastEventIdx >= 0 && builtEvents[lastEventIdx].type !== 'event') lastEventIdx--;
+        startIndex = Math.max(0, lastEventIdx);
+    }
+    setCurrentEventIndex(startIndex);
+
+  }, [data]);
+
+  const handleJumpToSituation = useCallback((targetSituationName, jumpType) => {
+    const targetItem = data.find(d => d.situation_name === targetSituationName);
+    if (targetItem) {
+        setSelectedTopic(targetItem.topic_name);
+        handleOpenSituation(targetSituationName, jumpType);
+    }
+  }, [data, handleOpenSituation]);
 
   const closeStory = () => {
     setSelectedSituation(null);
@@ -92,10 +192,12 @@ export default function App() {
     if (isDiveDeeperOpen) return;
     if (currentEventIndex > 0) {
       setCurrentEventIndex(prev => prev - 1);
+    } else {
+      closeStory();
     }
   }, [currentEventIndex, isDiveDeeperOpen]);
 
-  // Listen for keyboard arrows
+  // Keyboard Navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (!selectedSituation || isDiveDeeperOpen) return;
@@ -109,176 +211,267 @@ export default function App() {
 
   if (error) {
     return (
-      <div className="center-screen">
-        <div className="error-icon"><X size={48} /></div>
-        <h2 className="error-title">Failed to load timeline</h2>
-        <p className="error-text">{error}</p>
-        <p className="error-hint">Ensure your daily Databricks export job is running and the DATA_URL is correct.</p>
+      <div className={`app-wrapper ${isDarkMode ? 'dark' : ''}`}>
+        <div className="center-message" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+          <X size={48} style={{color: '#ef4444', marginBottom: '1rem'}} />
+          <h2 style={{fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem'}}>Failed to load timeline</h2>
+          <p style={{color: 'var(--text-muted)'}}>{error}</p>
+        </div>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="center-screen">
-        <p style={{ color: "var(--text-muted)", fontWeight: "500" }}>Loading Timeline Data...</p>
-      </div>
-    );
-  }
-
-  // --- STORY VIEW (Instagram-style Timeline) ---
-  if (selectedSituation && storyEvents.length > 0) {
-    const currentEvent = storyEvents[currentEventIndex];
-    
-    return (
-      <div className="story-overlay">
-        <div className="story-container">
-          
-          <div className="story-progress">
-            {storyEvents.map((_, idx) => (
-              <div key={idx} className="progress-bar">
-                <div 
-                  className="progress-fill"
-                  style={{ width: idx <= currentEventIndex ? '100%' : '0%' }}
-                />
-              </div>
-            ))}
-          </div>
-
-          <div className="story-header">
-            <div>
-              <p className="story-topic">{selectedTopic}</p>
-              <h2 className="story-situation">{selectedSituation}</h2>
-            </div>
-            <button onClick={closeStory} className="story-close">
-              <X size={20} />
-            </button>
-          </div>
-
-          <div className="story-click-left" onClick={handlePrevStory} />
-          <div className="story-click-right" onClick={handleNextStory} />
-
-          <div className="story-content">
-             <div className="story-date">
-               {new Date(currentEvent.event_date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-             </div>
-             
-             <h1 className="story-summary">
-               {currentEvent.summary}
-             </h1>
-
-             <div className="story-sources">
-               <span className="sources-label">Sources:</span>
-               {(Array.isArray(currentEvent.sources) ? currentEvent.sources : []).map((source, i) => (
-                 <span key={i} className="source-tag">
-                   <ExternalLink size={10} />
-                   {source}
-                 </span>
-               ))}
-             </div>
-          </div>
-
-          <div className="story-footer">
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsDiveDeeperOpen(true);
-              }}
-              className="dive-deeper-btn"
-            >
-              <BookOpen size={20} />
-              Dive Deeper
-            </button>
-          </div>
-
-          <div className={`dive-deeper-modal ${isDiveDeeperOpen ? 'open' : ''}`}>
-            <div className="modal-handle"><div /></div>
-            <div className="modal-header">
-              <h3 className="modal-title">
-                <Info size={24} style={{ color: "var(--primary)" }} />
-                Detailed Context
-              </h3>
-              <button onClick={() => setIsDiveDeeperOpen(false)} className="modal-close">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="modal-body">
-              <p>{currentEvent.detailed_context}</p>
-            </div>
-          </div>
-
+      <div className={`app-wrapper ${isDarkMode ? 'dark' : ''}`}>
+        <div className="center-message" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+          <div className="spinner"></div>
+          <p style={{color: 'var(--text-muted)', fontWeight: '500'}}>Loading Timeline Data...</p>
         </div>
       </div>
     );
   }
 
-  // --- MAIN VIEW (Topics & Situations) ---
+  // --- STORY VIEW RENDERER ---
+  const renderStoryContent = () => {
+    const currentItem = storyEvents[currentEventIndex];
+    if (!currentItem) return null;
+
+    if (currentItem.type === 'prev_card') {
+      return (
+        <div className="jump-card">
+            <Clock size={48} className="jump-icon" />
+            <h2 className="jump-title">Leading up to this...</h2>
+            <p className="jump-subtitle">Explore previous connected situations.</p>
+            <div className="jump-buttons-container">
+                {currentItem.targets.map(target => (
+                    <button key={target} onClick={(e) => { e.stopPropagation(); handleJumpToSituation(target, 'prev'); }} className="jump-button">
+                        <span className="jump-text">{target}</span>
+                        <ArrowLeft size={20} className="jump-arrow" />
+                    </button>
+                ))}
+            </div>
+        </div>
+      );
+    }
+
+    if (currentItem.type === 'next_card') {
+      return (
+        <div className="jump-card">
+            <ArrowRight size={48} className="jump-icon" />
+            <h2 className="jump-title">The story continues</h2>
+            <p className="jump-subtitle">Follow the fallout in these unfolding timelines.</p>
+            <div className="jump-buttons-container">
+                {currentItem.targets.map(target => (
+                    <button key={target} onClick={(e) => { e.stopPropagation(); handleJumpToSituation(target, 'next'); }} className="jump-button jump-button-next">
+                        <span className="jump-text">{target}</span>
+                        <ChevronRight size={20} className="jump-arrow" />
+                    </button>
+                ))}
+            </div>
+        </div>
+      );
+    }
+
+    // Normal Event Card
+    const currentEvent = currentItem.data;
+    return (
+      <>
+        <div className="story-event-content">
+           <div className="story-date">
+             {new Date(currentEvent.event_date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+           </div>
+           
+           <h1 className="story-summary">
+             {currentEvent.summary}
+           </h1>
+        </div>
+
+        <div className="story-footer">
+          <button onClick={(e) => { e.stopPropagation(); setIsDiveDeeperOpen(true); }} className="dive-deeper-btn">
+            <BookOpen size={20} /> Dive Deeper
+          </button>
+        </div>
+      </>
+    );
+  };
+
   return (
-    <div>
+    <div className={`app-wrapper ${isDarkMode ? 'dark' : ''}`}>
+
+      {/* App Header */}
       <header className="app-header">
         <div className="header-content">
-          <div className="logo-icon">N</div>
-          <h1 className="header-title">News Timeline</h1>
-        </div>
-      </header>
-
-      <main className="app-main">
-        
-        <div className="section-header">
-          <h2 className="section-title">What's happening?</h2>
-          <p className="section-subtitle">Select a topic to explore unfolding situations.</p>
+          <div className="header-left">
+            <div className="logo-icon">N</div>
+            <h1 className="header-title">Living History</h1>
+          </div>
+          <button className="theme-toggle" onClick={() => setIsDarkMode(!isDarkMode)}>
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
         </div>
         
-        <div className="topic-grid">
-          {topics.map(topic => {
-            const isActive = selectedTopic === topic;
-            return (
+        {/* Horizontal Topic Navigation (Centered) */}
+        <div className="topic-nav-wrapper">
+          <div className="topic-nav">
+            {topics.map(topic => (
               <button
                 key={topic}
                 onClick={() => setSelectedTopic(topic)}
-                className={`topic-card ${isActive ? 'active' : ''}`}
+                className={`topic-pill ${selectedTopic === topic ? 'active' : ''}`}
               >
-                <div className="topic-indicator" />
-                <h3 className="topic-name">{topic}</h3>
-                <p className="topic-count">
-                  {data.filter(d => d.topic_name === topic).reduce((acc, curr) => acc.includes(curr.situation_name) ? acc : [...acc, curr.situation_name], []).length} Active Situations
-                </p>
+                {topic}
               </button>
-            );
-          })}
+            ))}
+          </div>
         </div>
+      </header>
 
+      {/* Main Content */}
+      <main className="app-main">
         {selectedTopic && (
-          <div>
-            <h3 className="situations-title">
-              Active Situations in {selectedTopic}
-            </h3>
-            <div className="situation-grid">
-              {situationsForTopic.map(situation => (
-                <button
-                  key={situation.id}
-                  onClick={() => handleOpenSituation(situation.name)}
-                  className="situation-card"
-                >
-                  <div className="situation-header">
-                    <h3 className="situation-name">{situation.name}</h3>
-                    <div className="situation-icon"><BookOpen size={18} /></div>
-                  </div>
-                  <div className="situation-footer">
-                    <span className="situation-events-count">
-                      {data.filter(d => d.situation_name === situation.name).length} Timeline Events
-                    </span>
-                    <span className="situation-action">
-                      View Story <ChevronRight size={16} />
-                    </span>
-                  </div>
-                </button>
-              ))}
+          <div style={{ maxWidth: '40rem', margin: '0 auto' }}>
+            <div className="situations-header">
+              <div className="situations-indicator" />
+              <h3 className="situations-title">{selectedTopic}</h3>
+            </div>
+            
+            <div className="situations-timeline">
+              {situationsForTopic.map((situation, index) => {
+                const olderSituation = situationsForTopic[index + 1];
+                let isConnected = false;
+                
+                if (olderSituation) {
+                  // Connect visually if they have a sequential relationship
+                  if (situation.prevSituations.includes(olderSituation.name) || olderSituation.nextSituations.includes(situation.name)) {
+                    isConnected = true;
+                  }
+                }
+
+                return (
+                  <React.Fragment key={situation.id}>
+                    <button
+                      onClick={() => handleOpenSituation(situation.name, 'default')}
+                      className="situation-card"
+                    >
+                      <div className="situation-header">
+                        <h3 className="situation-name">{situation.name}</h3>
+                        <div className="situation-icon"><BookOpen size={18} /></div>
+                      </div>
+                      
+                      <div className="situation-footer">
+                        <div className="situation-meta">
+                          <span className="situation-events-count">{situation.eventCount} Events</span>
+                        </div>
+                        <span className="situation-action">
+                          Read <ChevronRight size={16} />
+                        </span>
+                      </div>
+                    </button>
+                    
+                    {/* Render upward-pointing arrow from the older card to this newer card */}
+                    {olderSituation && (
+                      isConnected ? (
+                        <div className="timeline-arrow-container">
+                          <ArrowUp size={24} className="timeline-arrow-head" />
+                          <div className="timeline-arrow-line"></div>
+                        </div>
+                      ) : (
+                        <div className="timeline-gap"></div>
+                      )
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </div>
           </div>
         )}
-
       </main>
+
+      {/* Story View Modal */}
+      {selectedSituation && storyEvents.length > 0 && (
+        <div className="story-overlay">
+          <div className="story-container">
+            
+            {/* Progress Bars */}
+            <div className="story-progress">
+              {storyEvents.map((_, idx) => (
+                <div key={idx} className="progress-bar">
+                  <div 
+                    className="progress-fill"
+                    style={{ width: idx <= currentEventIndex ? '100%' : '0%' }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Story Header */}
+            <div className="story-header">
+              <div>
+                <p className="story-topic">{selectedTopic}</p>
+                <h2 className="story-situation">{selectedSituation}</h2>
+              </div>
+              <button onClick={closeStory} className="story-close">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Click Handlers */}
+            <div className="story-click-left" onClick={handlePrevStory} />
+            <div className="story-click-right" onClick={handleNextStory} />
+
+            {/* Dynamic Content */}
+            <div className="story-content-wrapper">
+               {renderStoryContent()}
+            </div>
+
+            {/* Dive Deeper Bottom Sheet Modal */}
+            <div className={`dive-deeper-modal ${isDiveDeeperOpen ? 'open' : ''}`}>
+              <div className="modal-handle-area" onClick={() => setIsDiveDeeperOpen(false)}>
+                <div className="modal-handle" />
+              </div>
+              
+              <div className="modal-header">
+                <h3 className="modal-title">
+                  <Info size={24} style={{color: "var(--primary)"}} />
+                  Detailed Context
+                </h3>
+                <button onClick={() => setIsDiveDeeperOpen(false)} className="modal-close">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="modal-body">
+                {storyEvents[currentEventIndex] && storyEvents[currentEventIndex].type === 'event' && (
+                  <>
+                    <p className="modal-text">
+                      {storyEvents[currentEventIndex].data.detailed_context}
+                    </p>
+                    
+                    {/* Sources Section */}
+                    <div className="sources-section">
+                      <h4 className="sources-title">External Sources</h4>
+                      {parseSources(storyEvents[currentEventIndex].data.sources).length > 0 ? (
+                        <div className="sources-list">
+                          {parseSources(storyEvents[currentEventIndex].data.sources).map((src, i) => (
+                             <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="source-link" title={src}>
+                               <img src={`https://www.google.com/s2/favicons?domain=${getDomain(src)}&sz=64`} alt="" className="source-favicon" />
+                               <span className="source-domain">{getDomain(src)}</span>
+                             </a>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={{color: 'var(--text-muted)', fontSize: '0.875rem'}}>No external sources available.</p>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
