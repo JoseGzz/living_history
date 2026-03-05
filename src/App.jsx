@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, X, Info, BookOpen, ExternalLink, ArrowLeft, ArrowRight, ArrowUp, Moon, Sun, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, BookOpen, ExternalLink, ArrowLeft, ArrowRight, Moon, Sun, Clock, X } from 'lucide-react';
 
 const DATA_URL = 'https://pub-d607727348954e568a4fb203bfcf4031.r2.dev/timeline_events.json';
 
@@ -50,28 +50,177 @@ const globalStyles = `
   .topic-pill:not(.active):hover { background: var(--card-bg); color: var(--text-main); border: 1px solid var(--border); }
   
   /* Main Content */
-  .app-main { max-width: 56rem; margin: 2rem auto 0; padding: 0 1rem; }
-  .situations-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; }
-  .situations-indicator { width: 0.375rem; height: 1.5rem; background: var(--primary); border-radius: 999px; }
-  .situations-title { font-size: 1.25rem; font-weight: 700; color: var(--text-main); }
+  .app-main { max-width: 48rem; margin: 2rem auto 0; padding: 0 1rem; }
   
-  /* Situation Timeline */
-  .situations-timeline { display: flex; flex-direction: column; width: 100%; }
-  .situation-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 1rem; padding: 1.5rem; text-align: left; display: flex; flex-direction: column; transition: all 0.2s; width: 100%; }
-  .situation-card:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-  .situation-card:active { transform: scale(0.98); }
-  .situation-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
-  .situation-name { font-size: 1.25rem; font-weight: 700; color: var(--text-main); line-height: 1.2; padding-right: 1rem; }
-  .situation-icon { background: var(--primary-light); color: var(--primary); padding: 0.5rem; border-radius: 999px; }
-  .situation-footer { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  /* --- VERTICAL TREE DIAGRAM LAYOUT --- */
+  .timeline-tree-container {
+      padding: 1rem 0 4rem 0;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      width: 100%;
+  }
+
+  /* Antecedent (Root Node) Button */
+  .tree-root-btn {
+      background: var(--card-bg);
+      border: 2px solid var(--primary);
+      color: var(--primary);
+      padding: 0.75rem 1.5rem;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 1.05rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+      transition: all 0.2s;
+      z-index: 2;
+      position: relative;
+  }
+  .dark .tree-root-btn {
+      background: rgba(30, 41, 59, 0.9);
+      color: #a5b4fc;
+      border-color: rgba(99, 102, 241, 0.7);
+  }
+  .tree-root-btn:active { transform: scale(0.96); }
+  .tree-root-btn.interactive:hover { background: var(--primary); color: white; }
+
+  .root-dot {
+      width: 10px;
+      height: 10px;
+      background: currentColor;
+      border-radius: 50%;
+  }
+
+  /* Branches Area */
+  .tree-branches-container {
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      margin-left: 2rem; /* Indents the cards */
+      margin-top: 2rem;
+      position: relative;
+      width: calc(100% - 2rem);
+  }
+
+  .tree-branch-row {
+      position: relative;
+      width: 100%;
+      display: flex;
+      align-items: center;
+  }
+
+  /* Vertical spine segment per row */
+  .tree-branch-row::before {
+      content: '';
+      position: absolute;
+      left: -1.5rem;
+      top: -2rem; /* Bridges the 2rem gap to the row above */
+      bottom: -2rem; /* Extends to next row by default */
+      width: 3px;
+      background-color: var(--primary);
+      border-radius: 3px;
+  }
+  
+  /* First row connects up to the root button */
+  .tree-branch-row:first-child::before {
+      top: -2.5rem; 
+  }
+  
+  /* Last row vertical line stops precisely at its own middle */
+  .tree-branch-row:last-child::before {
+      bottom: 50%;
+  }
+
+  /* Horizontal connecting line */
+  .tree-branch-row::after {
+      content: '';
+      position: absolute;
+      left: -1.5rem;
+      top: calc(50% - 1.5px);
+      width: calc(1.5rem - 6px); /* Stops slightly short to blend into the chevron icon */
+      height: 3px;
+      background-color: var(--primary);
+      border-radius: 3px;
+  }
+
+  /* Arrowhead pointing into the card (Stroke-style) */
+  .tree-arrow-head {
+      position: absolute;
+      left: -15px; /* Flushes stroke tip against the card edge */
+      top: calc(50% - 10px); /* Center the 20px icon vertically */
+      color: var(--primary);
+      z-index: 3; /* Lifted above the line to prevent overlap artifacts */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+  }
+
+  /* Situation Card Styling */
+  .situation-card { 
+      background: var(--card-bg); 
+      border: 1px solid var(--border); 
+      border-radius: 1rem; 
+      padding: 1.25rem 1.5rem; 
+      text-align: left; 
+      display: flex; 
+      flex-direction: column; 
+      transition: all 0.2s; 
+      width: 100%; 
+      position: relative;
+      z-index: 2;
+  }
+  .situation-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px -2px rgba(0,0,0,0.1); }
+  
+  .situation-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; }
+  .situation-name { font-size: 1.2rem; font-weight: 700; color: var(--text-main); line-height: 1.3; padding-right: 1rem; }
+  .situation-icon { background: var(--primary-light); color: var(--primary); padding: 0.5rem; border-radius: 999px; flex-shrink: 0; }
+  .situation-footer { display: flex; flex-direction: column; gap: 1.25rem; margin-top: auto; padding-top: 1.25rem; border-top: 1px solid var(--border); }
   .situation-meta { display: flex; flex-direction: column; gap: 0.25rem; }
   .situation-events-count { font-size: 0.875rem; font-weight: 500; color: var(--text-muted); }
-  .situation-action { color: var(--primary); font-size: 0.875rem; font-weight: 700; display: flex; align-items: center; gap: 0.25rem; }
   
-  .timeline-arrow-container { display: flex; flex-direction: column; align-items: center; height: 3.5rem; position: relative; }
-  .timeline-arrow-head { margin-bottom: -6px; color: var(--primary); z-index: 1; opacity: 0.9; }
-  .timeline-arrow-line { width: 3px; flex: 1; background: var(--primary); opacity: 0.3; border-radius: 999px; }
-  .timeline-gap { height: 1.5rem; }
+  /* Situation Buttons */
+  .situation-actions-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      width: 100%;
+  }
+  .action-btn-read, .action-btn-forward {
+      padding: 0.6rem 1rem;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+      flex: 1;
+      justify-content: center;
+  }
+  .action-btn-read {
+      background: var(--primary-light);
+      color: var(--primary);
+  }
+  .dark .action-btn-read {
+      background: rgba(79, 70, 229, 0.2);
+      color: #a5b4fc;
+  }
+  .action-btn-read:hover {
+      background: var(--primary);
+      color: white;
+  }
+  .action-btn-forward {
+      background: var(--primary);
+      color: white;
+  }
+  .action-btn-forward:hover {
+      background: #4338ca;
+  }
+  .dark .action-btn-forward:hover {
+      background: #6366f1;
+  }
   
   /* Story Viewer */
   .story-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center; z-index: 50; backdrop-filter: blur(4px); }
@@ -101,28 +250,27 @@ const globalStyles = `
   .dive-deeper-btn:active { transform: scale(0.98); }
   
   /* Jump Cards */
-  .jump-card { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; z-index: 10; position: relative; color: #fff; }
+  .jump-card { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; z-index: 10; position: relative; color: #fff; pointer-events: auto; }
   .jump-icon { margin: 0 auto 1rem; color: #818cf8; opacity: 0.8; }
   .jump-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
   .jump-subtitle { font-size: 0.875rem; color: #cbd5e1; margin-bottom: 2rem; }
-  .jump-buttons-container { display: flex; flex-direction: column; gap: 0.75rem; width: 100%; max-width: 20rem; margin: 0 auto; }
+  .jump-buttons-container { display: flex; flex-direction: column; gap: 0.75rem; width: 100%; max-width: 20rem; margin: 0 auto; pointer-events: auto; }
   .jump-button { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(12px); padding: 1rem; border-radius: 1rem; color: white; display: flex; justify-content: space-between; align-items: center; transition: background 0.2s, transform 0.2s; pointer-events: auto; }
   .jump-button:hover { background: rgba(255,255,255,0.15); }
   .jump-button-next { background: rgba(79, 70, 229, 0.8); border: 1px solid rgba(129, 140, 248, 0.5); }
   .jump-button-next:hover { background: rgba(79, 70, 229, 1); }
-  .jump-text { font-weight: 600; text-align: left; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .jump-text { font-weight: 600; text-align: left; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .jump-arrow { opacity: 0.7; transition: opacity 0.2s, transform 0.2s; }
   .jump-button:hover .jump-arrow { opacity: 1; }
   
-  /* Dive Deeper Modal */
+  /* Dive Deeper Modal & Backdrop */
+  .dive-deeper-backdrop { position: absolute; inset: 0; z-index: 35; }
   .dive-deeper-modal { position: absolute; bottom: 0; left: 0; right: 0; background: var(--bg-color); z-index: 40; border-radius: 1.5rem 1.5rem 0 0; height: 85%; display: flex; flex-direction: column; box-shadow: 0 -10px 40px rgba(0,0,0,0.5); transform: translateY(100%); transition: transform 0.3s ease-out; }
   .dive-deeper-modal.open { transform: translateY(0); }
-  .modal-handle-area { display: flex; justify-content: center; padding: 0.75rem; cursor: pointer; }
+  .modal-handle-area { display: flex; justify-content: center; padding: 1rem 0.75rem 0.5rem; cursor: pointer; }
   .modal-handle { width: 3rem; height: 0.375rem; background: var(--border); border-radius: 999px; }
   .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 0 1.5rem 1rem; border-bottom: 1px solid var(--border); }
   .modal-title { font-weight: 700; font-size: 1.25rem; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem; }
-  .modal-close { padding: 0.5rem; background: var(--border); color: var(--text-main); border-radius: 999px; transition: background 0.2s; }
-  .modal-close:hover { background: var(--card-bg); }
   .modal-body { padding: 1.5rem; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2rem; }
   .modal-text { color: var(--text-main); font-size: 1.125rem; line-height: 1.6; white-space: pre-wrap; }
   
@@ -137,17 +285,14 @@ const globalStyles = `
 `;
 
 // --- UTILS ---
-// Robust parser to handle stringified Python lists like "['url1'\n 'url2']"
 const parseSources = (sourcesStr) => {
   if (!sourcesStr) return [];
   if (Array.isArray(sourcesStr)) return sourcesStr;
   if (typeof sourcesStr === 'string') {
     if (sourcesStr === '[]') return [];
     try {
-      // Try standard JSON parse first (replacing single quotes with double)
       return JSON.parse(sourcesStr.replace(/'/g, '"'));
     } catch (e) {
-      // Fallback: extract anything inside single quotes
       const matches = sourcesStr.match(/'([^']+)'/g);
       if (matches) {
         return matches.map(m => m.replace(/'/g, ''));
@@ -177,11 +322,13 @@ export default function App() {
   // Navigation State
   const [selectedTopic, setSelectedTopic] = useState('Politics');
   const [selectedSituation, setSelectedSituation] = useState(null);
+  const [currentLayerSituations, setCurrentLayerSituations] = useState([]); // Controls active tree branches
   
   // Story State
   const [storyEvents, setStoryEvents] = useState([]);
   const [currentEventIndex, setCurrentEventIndex] = useState(0);
   const [isDiveDeeperOpen, setIsDiveDeeperOpen] = useState(false);
+  const [touchStartY, setTouchStartY] = useState(0);
 
   // Load Data
   useEffect(() => {
@@ -250,7 +397,56 @@ export default function App() {
     return enrichedSituations.sort((a, b) => b.latestDate - a.latestDate);
   }, [selectedTopic, data]);
 
-  // Handlers
+  // Handle Layer Initialization (Defaults to Root Situations)
+  useEffect(() => {
+      if (!selectedTopic || situationsForTopic.length === 0) return;
+      
+      // Find true roots: situations with no previous connections within this topic
+      const roots = situationsForTopic.filter(s => s.prevSituations.length === 0).map(s => s.name);
+      
+      if (roots.length > 0) {
+          setCurrentLayerSituations(roots);
+      } else {
+          // Fallback if data lacks a clear root
+          setCurrentLayerSituations([situationsForTopic[0].name]);
+      }
+  }, [selectedTopic, situationsForTopic]);
+
+  const currentLayerAntecedent = useMemo(() => {
+      if (currentLayerSituations.length === 0) return null;
+      const firstSit = situationsForTopic.find(s => s.name === currentLayerSituations[0]);
+      return firstSit?.prevSituations?.[0] || null;
+  }, [currentLayerSituations, situationsForTopic]);
+
+  // --- LAYER NAVIGATION (TREE DIAGRAM) ---
+  const handleGoBackLayer = useCallback(() => {
+      if (!currentLayerAntecedent) return; 
+      
+      const antecedentData = situationsForTopic.find(s => s.name === currentLayerAntecedent);
+      const parentOfAntecedent = antecedentData?.prevSituations?.[0] || null;
+      
+      // Find antecedent situation along with all of those on the 'same level'
+      const sameLevel = situationsForTopic.filter(s => {
+          if (parentOfAntecedent) return s.prevSituations.includes(parentOfAntecedent);
+          return s.prevSituations.length === 0;
+      }).map(s => s.name);
+      
+      if (sameLevel.length > 0) {
+          setCurrentLayerSituations(sameLevel);
+      } else {
+          setCurrentLayerSituations([currentLayerAntecedent]);
+      }
+  }, [currentLayerAntecedent, situationsForTopic]);
+
+  const handleGoForwardLayer = useCallback((situationName) => {
+      const sitData = situationsForTopic.find(s => s.name === situationName);
+      if (sitData?.nextSituations?.length > 0) {
+          setCurrentLayerSituations(sitData.nextSituations);
+      }
+  }, [situationsForTopic]);
+
+
+  // --- STORY ENGINE ---
   const handleOpenSituation = useCallback((situationName, jumpType = 'default') => {
     const rawEvents = data
       .filter(item => item.situation_name === situationName)
@@ -345,7 +541,7 @@ export default function App() {
     return (
       <div className={`app-wrapper ${isDarkMode ? 'dark' : ''}`}>
         <style dangerouslySetInnerHTML={{__html: globalStyles}} />
-        <div className="center-message">
+        <div className="center-message" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
           <X size={48} style={{color: '#ef4444', marginBottom: '1rem'}} />
           <h2 style={{fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '0.5rem'}}>Failed to load timeline</h2>
           <p style={{color: 'var(--text-muted)'}}>{error}</p>
@@ -471,30 +667,34 @@ export default function App() {
       {/* Main Content */}
       <main className="app-main">
         {selectedTopic && (
-          <div style={{ maxWidth: '40rem', margin: '0 auto' }}>
-            <div className="situations-header">
-              <div className="situations-indicator" />
-              <h3 className="situations-title">{selectedTopic}</h3>
-            </div>
+          <div className="timeline-tree-container">
             
-            <div className="situations-timeline">
-              {situationsForTopic.map((situation, index) => {
-                const olderSituation = situationsForTopic[index + 1];
-                let isConnected = false;
+            {/* Top Row: Antecedent (Root Node) */}
+            <button 
+              className={`tree-root-btn ${currentLayerAntecedent ? 'interactive' : ''}`}
+              onClick={currentLayerAntecedent ? handleGoBackLayer : undefined}
+              style={{ cursor: currentLayerAntecedent ? 'pointer' : 'default' }}
+              title={currentLayerAntecedent ? "Go back to previous situation" : "Root timeline"}
+            >
+              {currentLayerAntecedent ? <ArrowLeft size={18} /> : <div className="root-dot" />}
+              <span>{currentLayerAntecedent ? currentLayerAntecedent : `${selectedTopic} Root Context`}</span>
+            </button>
+            
+            {/* Vertically Stacked Branches */}
+            <div className="tree-branches-container">
+              {currentLayerSituations.map(sitName => {
+                const situation = situationsForTopic.find(s => s.name === sitName);
+                if (!situation) return null;
                 
-                if (olderSituation) {
-                  // Connect visually if they have a sequential relationship
-                  if (situation.prevSituations.includes(olderSituation.name) || olderSituation.nextSituations.includes(situation.name)) {
-                    isConnected = true;
-                  }
-                }
-
                 return (
-                  <React.Fragment key={situation.id}>
-                    <button
-                      onClick={() => handleOpenSituation(situation.name, 'default')}
-                      className="situation-card"
-                    >
+                  <div key={situation.id} className="tree-branch-row">
+                    
+                    {/* The stroke-based Arrow Head matching the design graphic */}
+                    <div className="tree-arrow-head">
+                       <ChevronRight size={20} strokeWidth={3} />
+                    </div>
+                    
+                    <div className="situation-card">
                       <div className="situation-header">
                         <h3 className="situation-name">{situation.name}</h3>
                         <div className="situation-icon"><BookOpen size={18} /></div>
@@ -502,29 +702,33 @@ export default function App() {
                       
                       <div className="situation-footer">
                         <div className="situation-meta">
-                          <span className="situation-events-count">{situation.eventCount} Events</span>
+                          <span className="situation-events-count">{situation.eventCount} Timeline Events</span>
                         </div>
-                        <span className="situation-action">
-                          Read <ChevronRight size={16} />
-                        </span>
+                        
+                        <div className="situation-actions-row">
+                          <button 
+                            className="action-btn-read"
+                            onClick={() => handleOpenSituation(situation.name, 'default')}
+                          >
+                            <BookOpen size={16} /> Read
+                          </button>
+                          
+                          {situation.nextSituations.length > 0 && (
+                            <button 
+                              className="action-btn-forward"
+                              onClick={() => handleGoForwardLayer(situation.name)}
+                            >
+                              Branches <ArrowRight size={16} />
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </button>
-                    
-                    {/* Render upward-pointing arrow from the older card to this newer card */}
-                    {olderSituation && (
-                      isConnected ? (
-                        <div className="timeline-arrow-container">
-                          <ArrowUp size={24} className="timeline-arrow-head" />
-                          <div className="timeline-arrow-line"></div>
-                        </div>
-                      ) : (
-                        <div className="timeline-gap"></div>
-                      )
-                    )}
-                  </React.Fragment>
+                    </div>
+                  </div>
                 );
               })}
             </div>
+
           </div>
         )}
       </main>
@@ -566,20 +770,41 @@ export default function App() {
                {renderStoryContent()}
             </div>
 
+            {/* Dive Deeper Background Overlay (Tap outside to close) */}
+            {isDiveDeeperOpen && (
+              <div 
+                className="dive-deeper-backdrop" 
+                onClick={() => setIsDiveDeeperOpen(false)}
+              />
+            )}
+
             {/* Dive Deeper Bottom Sheet Modal */}
             <div className={`dive-deeper-modal ${isDiveDeeperOpen ? 'open' : ''}`}>
-              <div className="modal-handle-area" onClick={() => setIsDiveDeeperOpen(false)}>
+              <div 
+                className="modal-handle-area" 
+                onClick={() => setIsDiveDeeperOpen(false)}
+                onTouchStart={(e) => setTouchStartY(e.touches[0].clientY)}
+                onTouchEnd={(e) => {
+                    const deltaY = e.changedTouches[0].clientY - touchStartY;
+                    if (deltaY > 30) setIsDiveDeeperOpen(false); // Swipe down on handle area to close
+                }}
+              >
                 <div className="modal-handle" />
               </div>
               
-              <div className="modal-header">
+              <div 
+                className="modal-header"
+                onTouchStart={(e) => setTouchStartY(e.touches[0].clientY)}
+                onTouchEnd={(e) => {
+                    const deltaY = e.changedTouches[0].clientY - touchStartY;
+                    if (deltaY > 30) setIsDiveDeeperOpen(false); // Swipe down on header area to close
+                }}
+              >
                 <h3 className="modal-title">
                   <Info size={24} style={{color: "var(--primary)"}} />
                   Detailed Context
                 </h3>
-                <button onClick={() => setIsDiveDeeperOpen(false)} className="modal-close">
-                  <X size={20} />
-                </button>
+                {/* The X button has been purposefully removed as per requirements */}
               </div>
               
               <div className="modal-body">
@@ -589,7 +814,7 @@ export default function App() {
                       {storyEvents[currentEventIndex].data.detailed_context}
                     </p>
                     
-                    {/* Sources Section moved to Dive Deeper */}
+                    {/* Sources Section */}
                     <div className="sources-section">
                       <h4 className="sources-title">External Sources</h4>
                       {parseSources(storyEvents[currentEventIndex].data.sources).length > 0 ? (
