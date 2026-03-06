@@ -208,7 +208,8 @@ const globalStyles = `
   .situation-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px -2px rgba(0,0,0,0.1); }
   
   .situation-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
-  .situation-name { font-size: 1.2rem; font-weight: 700; color: var(--text-main); line-height: 1.3; padding-right: 1rem; }
+  .situation-name { font-size: 1.2rem; font-weight: 700; color: var(--text-main); line-height: 1.3; padding-right: 1rem; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+  .situation-topic-badge { font-size: 0.7rem; background-color: var(--border); color: var(--text-muted); padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
   .situation-icon { background: var(--primary-light); color: var(--primary); padding: 0.5rem; border-radius: 999px; flex-shrink: 0; }
   
   .situation-latest-event {
@@ -454,11 +455,16 @@ export default function App() {
     fetchData();
   }, []);
 
-  // Derived Data
-  const topics = useMemo(() => {
-    const uniqueTopics = [...new Set(data.map(item => item.topic_name))];
+  // ----------------------------------------------------------------------
+  // Derived Data & Global Bidirectional Map Processing (No limits applied!)
+  // ----------------------------------------------------------------------
+  const { topics, enrichedSituations } = useMemo(() => {
+    if (!data || data.length === 0) return { topics: [], enrichedSituations: [] };
+
+    // 1. Unique topics
+    const uniqueTopics = [...new Set(data.map(item => item.topic_name?.trim()).filter(Boolean))];
     const priority = ['Politics', 'Technology', 'Economy'];
-    return uniqueTopics.sort((a, b) => {
+    uniqueTopics.sort((a, b) => {
       const indexA = priority.indexOf(a);
       const indexB = priority.indexOf(b);
       if (indexA !== -1 && indexB !== -1) return indexA - indexB;
@@ -466,60 +472,58 @@ export default function App() {
       if (indexB !== -1) return 1;
       return a.localeCompare(b);
     });
-  }, [data]);
 
-  const situationsForTopic = useMemo(() => {
-    if (!selectedTopic) return [];
-    const filtered = data.filter(item => item.topic_name === selectedTopic);
-    const uniqueSituationNames = [...new Set(filtered.map(item => item.situation_name))];
-    
-    // Build bidirectional graph mapping to ensure parent-child arrays are perfectly synced
+    // 2. Global bidirectional map
     const nextMap = new Map();
     const prevMap = new Map();
 
-    uniqueSituationNames.forEach(name => {
-      nextMap.set(name, new Set());
-      prevMap.set(name, new Set());
-    });
-
-    const validInTopic = new Set(uniqueSituationNames);
-
     data.forEach(e => {
-      const current = e.situation_name;
-      const prev = e.previous_situation;
-      const next = e.next_situation;
+      const current = e.situation_name?.trim();
+      if (!current) return;
 
-      // If a child declares a parent, link them in BOTH directions
-      if (prev && prev !== current && validInTopic.has(prev) && validInTopic.has(current)) {
-        if (!prevMap.has(current)) prevMap.set(current, new Set());
-        prevMap.get(current).add(prev);
-        
-        if (!nextMap.has(prev)) nextMap.set(prev, new Set());
-        nextMap.get(prev).add(current);
-      }
+      // Safely parse potentially comma-separated fields
+      const parseLinks = (str) => {
+          if (!str || typeof str !== 'string') return [];
+          if (str.toLowerCase() === 'null' || str.toLowerCase() === 'none') return [];
+          return str.split(',').map(s => s.trim()).filter(Boolean);
+      };
 
-      // If a parent declares a child, link them in BOTH directions
-      if (next && next !== current && validInTopic.has(next) && validInTopic.has(current)) {
-        if (!nextMap.has(current)) nextMap.set(current, new Set());
-        nextMap.get(current).add(next);
-        
-        if (!prevMap.has(next)) prevMap.set(next, new Set());
-        prevMap.get(next).add(current);
-      }
+      const prevs = parseLinks(e.previous_situation);
+      prevs.forEach(prev => {
+          if (prev !== current) {
+              if (!prevMap.has(current)) prevMap.set(current, new Set());
+              prevMap.get(current).add(prev);
+              if (!nextMap.has(prev)) nextMap.set(prev, new Set());
+              nextMap.get(prev).add(current);
+          }
+      });
+
+      const nexts = parseLinks(e.next_situation);
+      nexts.forEach(next => {
+          if (next !== current) {
+              if (!nextMap.has(current)) nextMap.set(current, new Set());
+              nextMap.get(current).add(next);
+              if (!prevMap.has(next)) prevMap.set(next, new Set());
+              prevMap.get(next).add(current);
+          }
+      });
     });
 
-    const enrichedSituations = uniqueSituationNames.map(name => {
-      const evts = filtered.filter(i => i.situation_name === name);
+    // 3. Enrich ALL situations globally
+    const uniqueSituationNames = [...new Set(data.map(item => item.situation_name?.trim()).filter(Boolean))];
+    
+    const enriched = uniqueSituationNames.map(name => {
+      const evts = data.filter(i => i.situation_name?.trim() === name);
       const item = evts[0];
       
-      // Get the most recent event to display as a preview in the card
       const sortedEvts = [...evts].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
       const latestEventSummary = sortedEvts.length > 0 ? sortedEvts[0].summary : "";
       const latestEventDate = sortedEvts.length > 0 ? sortedEvts[0].event_date : null;
 
       return { 
-        id: item.situation_id, 
+        id: item.situation_id || name, 
         name: name,
+        topic: item.topic_name?.trim() || "Uncategorized",
         eventCount: evts.length,
         latestEventSummary: latestEventSummary,
         latestEventDate: latestEventDate,
@@ -529,23 +533,68 @@ export default function App() {
       };
     });
 
-    return enrichedSituations.sort((a, b) => b.latestDate - a.latestDate);
-  }, [selectedTopic, data]);
+    // Sort by most recent timeline activity
+    enriched.sort((a, b) => b.latestDate - a.latestDate);
+
+    return { topics: uniqueTopics, enrichedSituations: enriched };
+  }, [data]);
 
   // Handle Layer Initialization using the Stack (Defaults to Root Situations)
   useEffect(() => {
-      if (!selectedTopic || situationsForTopic.length === 0) return;
+      if (!selectedTopic || enrichedSituations.length === 0) return;
       
-      // Find true roots: situations with no previous connections within this topic
-      const roots = situationsForTopic.filter(s => s.prevSituations.length === 0).map(s => s.name);
+      const situationsInTopic = enrichedSituations.filter(s => s.topic === selectedTopic);
+      const validInTopicNames = new Set(situationsInTopic.map(s => s.name));
       
-      if (roots.length > 0) {
-          setLayerStack([{ parent: null, situations: roots }]);
-      } else {
-          // Fallback if data lacks a clear root
-          setLayerStack([{ parent: null, situations: [situationsForTopic[0].name] }]);
+      // 1. Find natural roots (No parents, or all parents are in different topics)
+      const roots = situationsInTopic.filter(s => {
+          if (s.prevSituations.length === 0) return true;
+          const hasParentInSameTopic = s.prevSituations.some(parentName => validInTopicNames.has(parentName));
+          return !hasParentInSameTopic;
+      }).map(s => s.name);
+      
+      // 2. Reachability Algorithm to catch orphaned islands or circular loops
+      const reachable = new Set();
+      const queue = [...roots];
+      
+      while (queue.length > 0) {
+          const curr = queue.shift();
+          if (!reachable.has(curr)) {
+              reachable.add(curr);
+              const node = situationsInTopic.find(s => s.name === curr);
+              if (node) {
+                  node.nextSituations.forEach(child => {
+                      if (validInTopicNames.has(child)) queue.push(child);
+                  });
+              }
+          }
       }
-  }, [selectedTopic, situationsForTopic]);
+      
+      // 3. Force any hidden/unreachable situation to become a root topic
+      situationsInTopic.forEach(s => {
+          if (!reachable.has(s.name)) {
+              roots.push(s.name);
+              
+              // Add its children to reachable so we only expose one entry point to a loop
+              const islandQueue = [s.name];
+              while(islandQueue.length > 0) {
+                  const curr = islandQueue.shift();
+                  if (!reachable.has(curr)) {
+                      reachable.add(curr);
+                      const node = situationsInTopic.find(n => n.name === curr);
+                      if (node) {
+                          node.nextSituations.forEach(child => {
+                              if (validInTopicNames.has(child)) islandQueue.push(child);
+                          });
+                      }
+                  }
+              }
+          }
+      });
+      
+      setLayerStack([{ parent: null, situations: roots }]);
+      
+  }, [selectedTopic, enrichedSituations]);
 
   const currentLayer = layerStack[layerStack.length - 1] || { parent: null, situations: [] };
   const currentLayerAntecedent = currentLayer.parent;
@@ -557,42 +606,32 @@ export default function App() {
   }, []);
 
   const handleGoForwardLayer = useCallback((situationName) => {
-      const sitData = situationsForTopic.find(s => s.name === situationName);
+      // Find globally (allows seamless cross-topic graph traversal)
+      const sitData = enrichedSituations.find(s => s.name === situationName);
       if (sitData?.nextSituations?.length > 0) {
           setLayerStack(prev => [...prev, { parent: situationName, situations: sitData.nextSituations }]);
       }
-  }, [situationsForTopic]);
+  }, [enrichedSituations]);
 
 
   // --- STORY ENGINE ---
   const handleOpenSituation = useCallback((situationName, jumpType = 'default') => {
     const rawEvents = data
-      .filter(item => item.situation_name === situationName)
+      .filter(item => item.situation_name?.trim() === situationName)
       .sort((a, b) => new Date(a.event_date) - new Date(b.event_date)); 
     
-    const validSituations = new Set(data.map(d => d.situation_name));
-    const prevSituations = new Set();
-    const nextSituations = new Set();
-
-    rawEvents.forEach(e => {
-        if (e.previous_situation && e.previous_situation !== situationName && validSituations.has(e.previous_situation)) {
-            prevSituations.add(e.previous_situation);
-        }
-        if (e.next_situation && e.next_situation !== situationName && validSituations.has(e.next_situation)) {
-            nextSituations.add(e.next_situation);
-        }
-    });
-
+    // Utilize the enriched global maps for accurate parent/child jumping
+    const sitData = enrichedSituations.find(s => s.name === situationName);
     const builtEvents = [];
     
-    if (prevSituations.size > 0) {
-        builtEvents.push({ type: 'prev_card', targets: Array.from(prevSituations) });
+    if (sitData && sitData.prevSituations.length > 0) {
+        builtEvents.push({ type: 'prev_card', targets: sitData.prevSituations });
     }
 
     rawEvents.forEach(e => builtEvents.push({ type: 'event', data: e }));
 
-    if (nextSituations.size > 0) {
-        builtEvents.push({ type: 'next_card', targets: Array.from(nextSituations) });
+    if (sitData && sitData.nextSituations.length > 0) {
+        builtEvents.push({ type: 'next_card', targets: sitData.nextSituations });
     }
 
     setStoryEvents(builtEvents);
@@ -606,15 +645,15 @@ export default function App() {
     }
     setCurrentEventIndex(Math.max(0, lastEventIdx));
 
-  }, [data]);
+  }, [data, enrichedSituations]);
 
   const handleJumpToSituation = useCallback((targetSituationName, jumpType) => {
-    const targetItem = data.find(d => d.situation_name === targetSituationName);
+    const targetItem = enrichedSituations.find(d => d.name === targetSituationName);
     if (targetItem) {
-        setSelectedTopic(targetItem.topic_name);
+        setSelectedTopic(targetItem.topic);
         handleOpenSituation(targetSituationName, jumpType);
     }
-  }, [data, handleOpenSituation]);
+  }, [enrichedSituations, handleOpenSituation]);
 
   const closeStory = () => {
     setSelectedSituation(null);
@@ -884,7 +923,7 @@ export default function App() {
               {/* Vertically Stacked Branches */}
               <div className="tree-branches-container">
                 {currentLayerSituations.map(sitName => {
-                  const situation = situationsForTopic.find(s => s.name === sitName);
+                  const situation = enrichedSituations.find(s => s.name === sitName);
                   if (!situation) return null;
                   
                   return (
@@ -897,7 +936,14 @@ export default function App() {
                       
                       <div className="situation-card">
                         <div className="situation-header">
-                          <h3 className="situation-name">{situation.name}</h3>
+                          <h3 className="situation-name">
+                             {situation.name}
+                             {situation.topic !== selectedTopic && (
+                               <span className="situation-topic-badge">
+                                  {situation.topic}
+                               </span>
+                             )}
+                          </h3>
                           <div className="situation-icon"><BookOpen size={18} /></div>
                         </div>
                         
