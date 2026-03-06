@@ -250,7 +250,7 @@ const globalStyles = `
   .dive-deeper-btn:active { transform: scale(0.98); }
   
   /* Jump Cards */
-  .jump-card { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; z-index: 10; position: relative; color: #fff; pointer-events: auto; }
+  .jump-card { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 2rem; z-index: 10; position: relative; color: #fff; pointer-events: none; }
   .jump-icon { margin: 0 auto 1rem; color: #818cf8; opacity: 0.8; }
   .jump-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
   .jump-subtitle { font-size: 0.875rem; color: #cbd5e1; margin-bottom: 2rem; }
@@ -481,14 +481,8 @@ export default function App() {
     setSelectedSituation(situationName);
     setIsDiveDeeperOpen(false);
 
-    let startIndex = 0;
-    if (jumpType === 'next') {
-        startIndex = builtEvents.findIndex(e => e.type === 'event');
-    } else {
-        let lastEventIdx = builtEvents.length - 1;
-        while (lastEventIdx >= 0 && builtEvents[lastEventIdx].type !== 'event') lastEventIdx--;
-        startIndex = Math.max(0, lastEventIdx);
-    }
+    let startIndex = builtEvents.findIndex(e => e.type === 'event');
+    if (startIndex === -1) startIndex = 0;
     setCurrentEventIndex(startIndex);
 
   }, [data]);
@@ -640,7 +634,21 @@ export default function App() {
       <header className="app-header">
         <div className="header-content">
           <div className="header-left">
-            <div className="logo-icon">N</div>
+            <div className="logo-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="4" cy="12" r="2" fill="currentColor" />
+                <path d="M6 12h3" />
+                <path d="M9 8v12" />
+                <path d="M9 8h5" />
+                <path d="M14 4v8" />
+                <path d="M14 4h4" />
+                <circle cx="20" cy="4" r="2" fill="currentColor" />
+                <path d="M14 12h4" />
+                <circle cx="20" cy="12" r="2" fill="currentColor" />
+                <path d="M9 20h9" />
+                <circle cx="20" cy="20" r="2" fill="currentColor" />
+              </svg>
+            </div>
             <h1 className="header-title">Living History</h1>
           </div>
           <button className="theme-toggle" onClick={() => setIsDarkMode(!isDarkMode)}>
@@ -677,7 +685,7 @@ export default function App() {
               title={currentLayerAntecedent ? "Go back to previous situation" : "Root timeline"}
             >
               {currentLayerAntecedent ? <ArrowLeft size={18} /> : <div className="root-dot" />}
-              <span>{currentLayerAntecedent ? currentLayerAntecedent : `${selectedTopic} Root Context`}</span>
+              <span>{currentLayerAntecedent ? currentLayerAntecedent : "Root Topic"}</span>
             </button>
             
             {/* Vertically Stacked Branches */}
@@ -718,7 +726,7 @@ export default function App() {
                               className="action-btn-forward"
                               onClick={() => handleGoForwardLayer(situation.name)}
                             >
-                              Branches <ArrowRight size={16} />
+                              Next Topic <ArrowRight size={16} />
                             </button>
                           )}
                         </div>
