@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Info, BookOpen, ExternalLink, ArrowLeft, ArrowRight, Moon, Sun, Clock, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info, BookOpen, ExternalLink, ArrowLeft, ArrowRight, Moon, Sun, Clock, X, Menu } from 'lucide-react';
 
 const DATA_URL = 'https://pub-d607727348954e568a4fb203bfcf4031.r2.dev/timeline_events.json';
 
@@ -33,14 +33,30 @@ const globalStyles = `
   button { background: none; border: none; cursor: pointer; font-family: inherit; }
   
   /* Header */
-  .app-header { background: var(--card-bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
-  .header-content { max-width: 56rem; margin: 0 auto; padding: 1rem; display: flex; align-items: center; justify-content: space-between; }
-  .header-left { display: flex; align-items: center; gap: 0.75rem; }
+  .app-header { background: var(--card-bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 30; }
+  .header-content { max-width: 56rem; margin: 0 auto; padding: 1rem; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+  .header-left { display: flex; align-items: center; justify-content: flex-start; gap: 0.75rem; }
+  .header-center { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+  .header-right { display: flex; align-items: center; justify-content: flex-end; }
   .logo-icon { width: 2rem; height: 2rem; background: var(--primary); border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; }
   .header-title { font-size: 1.25rem; font-weight: 700; color: var(--text-main); }
-  .theme-toggle { padding: 0.5rem; border-radius: 50%; color: var(--text-muted); transition: background 0.2s; }
+  .theme-toggle { padding: 0.5rem; border-radius: 50%; color: var(--text-muted); transition: background 0.2s; display: flex; align-items: center; justify-content: center; }
   .theme-toggle:hover { background: var(--border); }
   
+  /* Sidebar Drawer */
+  .sidebar-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; backdrop-filter: blur(2px); transition: opacity 0.3s; }
+  .sidebar-panel { position: fixed; top: 0; bottom: 0; left: 0; width: 280px; background: var(--card-bg); z-index: 101; transform: translateX(-100%); transition: transform 0.3s ease-out; display: flex; flex-direction: column; box-shadow: 2px 0 15px rgba(0,0,0,0.1); }
+  .sidebar-panel.open { transform: translateX(0); }
+  .sidebar-header { padding: 1.5rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .sidebar-menu { display: flex; flex-direction: column; padding: 1rem 0; flex: 1; }
+  .sidebar-item { padding: 1rem 1.5rem; font-weight: 600; font-size: 1.1rem; color: var(--text-main); text-align: left; transition: background 0.2s; }
+  .sidebar-item:hover { background: var(--border); }
+  .sidebar-item.active { background: var(--primary-light); color: var(--primary); border-right: 4px solid var(--primary); }
+
+  /* About Page */
+  .about-page-container { background: var(--card-bg); border: 1px solid var(--border); border-radius: 1rem; padding: 2.5rem; margin-top: 2rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+  .about-page-text { font-size: 1.1rem; line-height: 1.8; color: var(--text-main); }
+
   /* Topic Nav (Centered) */
   .topic-nav-wrapper { max-width: 56rem; margin: 0 auto; }
   .topic-nav { display: flex; justify-content: center; gap: 0.75rem; padding: 1rem; overflow-x: auto; scrollbar-width: none; }
@@ -50,7 +66,7 @@ const globalStyles = `
   .topic-pill:not(.active):hover { background: var(--card-bg); color: var(--text-main); border: 1px solid var(--border); }
   
   /* Main Content */
-  .app-main { max-width: 48rem; margin: 2rem auto 0; padding: 0 1rem; }
+  .app-main { max-width: 48rem; margin: 0 auto; padding: 0 1rem; }
   
   /* --- VERTICAL TREE DIAGRAM LAYOUT --- */
   .timeline-tree-container {
@@ -61,7 +77,7 @@ const globalStyles = `
       width: 100%;
   }
 
-  /* Antecedent (Root Node) Button */
+  /* Antecedent (Root Node) Button - STICKY */
   .tree-root-btn {
       background: var(--card-bg);
       border: 2px solid var(--primary);
@@ -75,11 +91,12 @@ const globalStyles = `
       gap: 0.5rem;
       box-shadow: 0 4px 10px rgba(0,0,0,0.05);
       transition: all 0.2s;
-      z-index: 2;
-      position: relative;
+      position: sticky;
+      top: 150px; /* Sticks just below the header */
+      z-index: 20; /* High z-index to hover over the tree lines and cards */
   }
   .dark .tree-root-btn {
-      background: rgba(30, 41, 59, 0.9);
+      background: rgba(30, 41, 59, 0.95);
       color: #a5b4fc;
       border-color: rgba(99, 102, 241, 0.7);
   }
@@ -173,9 +190,24 @@ const globalStyles = `
   }
   .situation-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px -2px rgba(0,0,0,0.1); }
   
-  .situation-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem; }
+  .situation-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
   .situation-name { font-size: 1.2rem; font-weight: 700; color: var(--text-main); line-height: 1.3; padding-right: 1rem; }
   .situation-icon { background: var(--primary-light); color: var(--primary); padding: 0.5rem; border-radius: 999px; flex-shrink: 0; }
+  
+  .situation-latest-event {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 1.25rem;
+      font-style: italic;
+      border-left: 3px solid var(--border);
+      padding-left: 0.75rem;
+  }
+
   .situation-footer { display: flex; flex-direction: column; gap: 1.25rem; margin-top: auto; padding-top: 1.25rem; border-top: 1px solid var(--border); }
   .situation-meta { display: flex; flex-direction: column; gap: 0.25rem; }
   .situation-events-count { font-size: 0.875rem; font-weight: 500; color: var(--text-muted); }
@@ -226,10 +258,62 @@ const globalStyles = `
   .story-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; justify-content: center; align-items: center; z-index: 50; backdrop-filter: blur(4px); }
   .story-container { width: 100%; height: 100%; max-width: 28rem; background: linear-gradient(to bottom right, #0f172a, #020617); position: relative; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
   @media (min-width: 640px) { .story-container { height: 90vh; border-radius: 1.5rem; } }
+  
   .story-progress { position: absolute; top: 0; left: 0; right: 0; z-index: 30; display: flex; gap: 0.25rem; padding: 1.25rem 1rem 0; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent); pointer-events: none; }
   .progress-bar { height: 0.25rem; flex: 1; background: rgba(255,255,255,0.3); border-radius: 999px; overflow: hidden; }
   .progress-fill { height: 100%; background: #fff; transition: width 0.3s; }
   
+  /* Timeline Scrubber Overlay */
+  .story-scrubber-container {
+      position: absolute;
+      top: 1.25rem; /* Align exactly with the progress bars padding top */
+      left: 1rem;
+      right: 1rem;
+      height: 0.25rem;
+      z-index: 35;
+      display: flex;
+      align-items: center;
+  }
+  .story-scrubber {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      pointer-events: auto;
+      margin: 0;
+      cursor: grab;
+  }
+  .story-scrubber:active {
+      cursor: grabbing;
+  }
+  .story-scrubber:focus { outline: none; }
+  .story-scrubber::-webkit-slider-runnable-track { width: 100%; height: 100%; background: transparent; }
+  
+  /* Dynamic Thumb - Becomes an oval exactly spanning the active line segment */
+  .story-scrubber::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 0.375rem; /* 6px */
+      width: var(--thumb-width, 100%);
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+      margin-top: -0.0625rem; /* Centers the 6px thumb vertically on the 4px track */
+      transition: transform 0.1s;
+  }
+  .story-scrubber::-webkit-slider-thumb:hover { transform: scaleY(1.2); }
+  
+  .story-scrubber::-moz-range-track { width: 100%; height: 100%; background: transparent; border: none; }
+  .story-scrubber::-moz-range-thumb {
+      height: 0.375rem;
+      width: var(--thumb-width, 100%);
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 0 5px rgba(0,0,0,0.3);
+      border: none;
+      transition: transform 0.1s;
+  }
+  .story-scrubber::-moz-range-thumb:hover { transform: scaleY(1.2); }
+
   .story-header { position: absolute; top: 2rem; left: 0; right: 0; z-index: 30; display: flex; justify-content: space-between; align-items: flex-start; padding: 0 1rem; color: #fff; pointer-events: none; }
   .story-topic { font-size: 0.625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #a5b4fc; margin-bottom: 0.125rem; }
   .story-situation { font-size: 1.125rem; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
@@ -316,10 +400,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // Theme State
+  // Theme & Navigation State
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [currentView, setCurrentView] = useState('feed'); // 'feed' | 'about'
 
-  // Navigation State
+  // Topic State
   const [selectedTopic, setSelectedTopic] = useState('Politics');
   const [selectedSituation, setSelectedSituation] = useState(null);
   
@@ -408,11 +494,18 @@ export default function App() {
     const enrichedSituations = uniqueSituationNames.map(name => {
       const evts = filtered.filter(i => i.situation_name === name);
       const item = evts[0];
+      
+      // Get the most recent event to display as a preview in the card
+      const sortedEvts = [...evts].sort((a, b) => new Date(b.event_date) - new Date(a.event_date));
+      const latestEventSummary = sortedEvts.length > 0 ? sortedEvts[0].summary : "";
+      const latestEventDate = sortedEvts.length > 0 ? sortedEvts[0].event_date : null;
 
       return { 
         id: item.situation_id, 
         name: name,
         eventCount: evts.length,
+        latestEventSummary: latestEventSummary,
+        latestEventDate: latestEventDate,
         prevSituations: Array.from(prevMap.get(name) || []),
         nextSituations: Array.from(nextMap.get(name) || []),
         latestDate: new Date(Math.max(...evts.map(e => new Date(e.event_date))))
@@ -489,9 +582,12 @@ export default function App() {
     setSelectedSituation(situationName);
     setIsDiveDeeperOpen(false);
 
-    let startIndex = builtEvents.findIndex(e => e.type === 'event');
-    if (startIndex === -1) startIndex = 0;
-    setCurrentEventIndex(startIndex);
+    // Goal 2: Default to the LAST event card (not the Next Situation jump card)
+    let lastEventIdx = builtEvents.length - 1;
+    while (lastEventIdx >= 0 && builtEvents[lastEventIdx].type !== 'event') {
+        lastEventIdx--;
+    }
+    setCurrentEventIndex(Math.max(0, lastEventIdx));
 
   }, [data]);
 
@@ -569,6 +665,11 @@ export default function App() {
     );
   }
 
+  // Calculate dynamic thumb width to perfectly overlay the active progress bar segment
+  const scrubberThumbWidth = storyEvents.length > 1 
+    ? `calc((100% - ${(storyEvents.length - 1) * 0.25}rem) / ${storyEvents.length})` 
+    : '100%';
+
   // --- STORY VIEW RENDERER ---
   const renderStoryContent = () => {
     const currentItem = storyEvents[currentEventIndex];
@@ -642,6 +743,11 @@ export default function App() {
       <header className="app-header">
         <div className="header-content">
           <div className="header-left">
+            <button className="theme-toggle" onClick={() => setIsSidebarOpen(true)}>
+              <Menu size={24} />
+            </button>
+          </div>
+          <div className="header-center">
             <div className="logo-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="4" cy="12" r="2" fill="currentColor" />
@@ -659,93 +765,165 @@ export default function App() {
             </div>
             <h1 className="header-title">Living History</h1>
           </div>
-          <button className="theme-toggle" onClick={() => setIsDarkMode(!isDarkMode)}>
-            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
+          <div className="header-right">
+            <button className="theme-toggle" onClick={() => setIsDarkMode(!isDarkMode)}>
+              {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+          </div>
         </div>
         
-        {/* Horizontal Topic Navigation (Centered) */}
-        <div className="topic-nav-wrapper">
-          <div className="topic-nav">
-            {topics.map(topic => (
-              <button
-                key={topic}
-                onClick={() => setSelectedTopic(topic)}
-                className={`topic-pill ${selectedTopic === topic ? 'active' : ''}`}
-              >
-                {topic}
-              </button>
-            ))}
+        {/* Horizontal Topic Navigation (Centered) - Only shown in Feed View */}
+        {currentView === 'feed' && (
+          <div className="topic-nav-wrapper">
+            <div className="topic-nav">
+              {topics.map(topic => (
+                <button
+                  key={topic}
+                  onClick={() => setSelectedTopic(topic)}
+                  className={`topic-pill ${selectedTopic === topic ? 'active' : ''}`}
+                >
+                  {topic}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
-      {/* Main Content */}
+      {/* Sidebar Overlay and Panel */}
+      {isSidebarOpen && (
+        <div className="sidebar-backdrop" onClick={() => setIsSidebarOpen(false)} />
+      )}
+      <div className={`sidebar-panel ${isSidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-header">
+          <div className="header-center" style={{ gap: '0.5rem', display: 'flex', alignItems: 'center' }}>
+            <div className="logo-icon" style={{ width: '1.5rem', height: '1.5rem' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="4" cy="12" r="2" fill="currentColor" />
+                <path d="M6 12h3" />
+                <path d="M9 8v12" />
+                <path d="M9 8h5" />
+                <path d="M14 4v8" />
+                <path d="M14 4h4" />
+                <circle cx="20" cy="4" r="2" fill="currentColor" />
+                <path d="M14 12h4" />
+                <circle cx="20" cy="12" r="2" fill="currentColor" />
+                <path d="M9 20h9" />
+                <circle cx="20" cy="20" r="2" fill="currentColor" />
+              </svg>
+            </div>
+            <h2 className="header-title" style={{ fontSize: '1.1rem' }}>Menu</h2>
+          </div>
+          <button onClick={() => setIsSidebarOpen(false)} className="theme-toggle">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="sidebar-menu">
+          <button 
+            className={`sidebar-item ${currentView === 'feed' ? 'active' : ''}`}
+            onClick={() => { setCurrentView('feed'); setIsSidebarOpen(false); }}
+          >
+            Feed
+          </button>
+          <button 
+            className={`sidebar-item ${currentView === 'about' ? 'active' : ''}`}
+            onClick={() => { setCurrentView('about'); setIsSidebarOpen(false); }}
+          >
+            About
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
       <main className="app-main">
-        {selectedTopic && (
-          <div className="timeline-tree-container">
-            
-            {/* Top Row: Antecedent (Root Node) */}
-            <button 
-              className={`tree-root-btn ${currentLayerAntecedent ? 'interactive' : ''}`}
-              onClick={currentLayerAntecedent ? handleGoBackLayer : undefined}
-              style={{ cursor: currentLayerAntecedent ? 'pointer' : 'default' }}
-              title={currentLayerAntecedent ? "Go back to previous situation" : "Root timeline"}
-            >
-              {currentLayerAntecedent ? <ArrowLeft size={18} /> : <div className="root-dot" />}
-              <span>{currentLayerAntecedent ? currentLayerAntecedent : "Root Topics"}</span>
-            </button>
-            
-            {/* Vertically Stacked Branches */}
-            <div className="tree-branches-container">
-              {currentLayerSituations.map(sitName => {
-                const situation = situationsForTopic.find(s => s.name === sitName);
-                if (!situation) return null;
-                
-                return (
-                  <div key={situation.id} className="tree-branch-row">
-                    
-                    {/* The stroke-based Arrow Head matching the design graphic */}
-                    <div className="tree-arrow-head">
-                       <ChevronRight size={20} strokeWidth={3} />
-                    </div>
-                    
-                    <div className="situation-card">
-                      <div className="situation-header">
-                        <h3 className="situation-name">{situation.name}</h3>
-                        <div className="situation-icon"><BookOpen size={18} /></div>
+        {currentView === 'about' ? (
+          
+          /* About Page Content */
+          <div className="about-page-container">
+            <h2 className="section-title" style={{textAlign: "left", fontSize: "1.5rem", margin: "0 0 1rem 0"}}>About Living History</h2>
+            <p className="about-page-text">
+              This is an experimental AI-powered app that allows the user to navigate through major recent history events on a timeline format, allowing the user to see the big picture. The timeline is organized on a tree structure starting with mayor categories, containing a set of topics, each of which contains a set of related events. Each topic gets updated on a daily basis only if mayor events are found, and branches into sunsequent new topics when encessary.
+            </p>
+          </div>
+          
+        ) : (
+          
+          /* Feed / Timeline Tree View */
+          selectedTopic && (
+            <div className="timeline-tree-container">
+              
+              {/* Top Row: Antecedent (Root Node) */}
+              <button 
+                className={`tree-root-btn ${currentLayerAntecedent ? 'interactive' : ''}`}
+                onClick={currentLayerAntecedent ? handleGoBackLayer : undefined}
+                style={{ cursor: currentLayerAntecedent ? 'pointer' : 'default' }}
+                title={currentLayerAntecedent ? "Go back to previous situation" : "Root timeline"}
+              >
+                {currentLayerAntecedent ? <ArrowLeft size={18} /> : <div className="root-dot" />}
+                <span>{currentLayerAntecedent ? currentLayerAntecedent : "Root Topics"}</span>
+              </button>
+              
+              {/* Vertically Stacked Branches */}
+              <div className="tree-branches-container">
+                {currentLayerSituations.map(sitName => {
+                  const situation = situationsForTopic.find(s => s.name === sitName);
+                  if (!situation) return null;
+                  
+                  return (
+                    <div key={situation.id} className="tree-branch-row">
+                      
+                      {/* The stroke-based Arrow Head */}
+                      <div className="tree-arrow-head">
+                         <ChevronRight size={20} strokeWidth={3} />
                       </div>
                       
-                      <div className="situation-footer">
-                        <div className="situation-meta">
-                          <span className="situation-events-count">{situation.eventCount} Timeline Events</span>
+                      <div className="situation-card">
+                        <div className="situation-header">
+                          <h3 className="situation-name">{situation.name}</h3>
+                          <div className="situation-icon"><BookOpen size={18} /></div>
                         </div>
                         
-                        <div className="situation-actions-row">
-                          <button 
-                            className="action-btn-read"
-                            onClick={() => handleOpenSituation(situation.name, 'default')}
-                          >
-                            <BookOpen size={16} /> Read
-                          </button>
+                        {/* Displaying the most recent event summary for context */}
+                        <div className="situation-latest-event">
+                           {situation.latestEventDate && (
+                             <span style={{ fontWeight: 'bold', marginRight: '0.4rem', color: 'var(--primary)' }}>
+                               {new Date(situation.latestEventDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}:
+                             </span>
+                           )}
+                           {situation.latestEventSummary}
+                        </div>
+                        
+                        <div className="situation-footer">
+                          <div className="situation-meta">
+                            <span className="situation-events-count">{situation.eventCount} Timeline Events</span>
+                          </div>
                           
-                          {situation.nextSituations.length > 0 && (
+                          <div className="situation-actions-row">
                             <button 
-                              className="action-btn-forward"
-                              onClick={() => handleGoForwardLayer(situation.name)}
+                              className="action-btn-read"
+                              onClick={() => handleOpenSituation(situation.name, 'default')}
                             >
-                              Next Topic <ArrowRight size={16} />
+                              <BookOpen size={16} /> Read
                             </button>
-                          )}
+                            
+                            {situation.nextSituations.length > 0 && (
+                              <button 
+                                className="action-btn-forward"
+                                onClick={() => handleGoForwardLayer(situation.name)}
+                              >
+                                Next Topic <ArrowRight size={16} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
 
-          </div>
+            </div>
+          )
         )}
       </main>
 
@@ -764,6 +942,19 @@ export default function App() {
                   />
                 </div>
               ))}
+            </div>
+
+            {/* Timeline Scrubber Overlay */}
+            <div className="story-scrubber-container">
+               <input 
+                 type="range" 
+                 min="0" 
+                 max={Math.max(0, storyEvents.length - 1)} 
+                 value={currentEventIndex} 
+                 onChange={(e) => setCurrentEventIndex(parseInt(e.target.value))}
+                 className="story-scrubber"
+                 style={{ '--thumb-width': scrubberThumbWidth }}
+               />
             </div>
 
             {/* Story Header */}
@@ -820,7 +1011,6 @@ export default function App() {
                   <Info size={24} style={{color: "var(--primary)"}} />
                   Detailed Context
                 </h3>
-                {/* The X button has been purposefully removed as per requirements */}
               </div>
               
               <div className="modal-body">
