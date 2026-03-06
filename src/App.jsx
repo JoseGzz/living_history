@@ -421,7 +421,7 @@ export default function App() {
   // Theme & Navigation State
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [currentView, setCurrentView] = useState('feed'); // 'feed' | 'about'
+  const [currentView, setCurrentView] = useState('feed'); // 'feed' | 'about' | 'how-to'
 
   // Topic State
   const [selectedTopic, setSelectedTopic] = useState('Politics');
@@ -888,6 +888,12 @@ export default function App() {
           >
             About
           </button>
+          <button 
+            className={`sidebar-item ${currentView === 'how-to' ? 'active' : ''}`}
+            onClick={() => { setCurrentView('how-to'); setIsSidebarOpen(false); }}
+          >
+            How to Use
+          </button>
         </div>
       </div>
 
@@ -903,6 +909,16 @@ export default function App() {
             </p>
           </div>
           
+        ) : currentView === 'how-to' ? (
+          
+          /* How to Use Page Content */
+          <div className="about-page-container">
+            <h2 className="section-title" style={{textAlign: "left", fontSize: "1.5rem", margin: "0 0 1rem 0"}}>How to Use</h2>
+            <p className="about-page-text">
+              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+            </p>
+          </div>
+
         ) : (
           
           /* Feed / Timeline Tree View */
