@@ -6,6 +6,13 @@ const DATA_URL = 'https://pub-d607727348954e568a4fb203bfcf4031.r2.dev/timeline_e
 // --- CSS STYLES ---
 const globalStyles = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+  
+  html, body {
+      height: 100%;
+      overflow: hidden; /* Prevents whole-page bounce/scrolling */
+      overscroll-behavior: none;
+  }
+
   .app-wrapper {
       --bg-color: #f8fafc;
       --text-main: #0f172a;
@@ -16,9 +23,10 @@ const globalStyles = `
       --border: #e2e8f0;
       background-color: var(--bg-color);
       color: var(--text-main);
-      min-height: 100vh;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
       transition: background-color 0.3s, color 0.3s;
-      padding-bottom: 3rem;
   }
   .app-wrapper.dark {
       --bg-color: #0f172a;
@@ -33,7 +41,7 @@ const globalStyles = `
   button { background: none; border: none; cursor: pointer; font-family: inherit; }
   
   /* Header */
-  .app-header { background: var(--card-bg); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 30; }
+  .app-header { background: var(--card-bg); border-bottom: 1px solid var(--border); z-index: 30; flex-shrink: 0; }
   .header-content { max-width: 56rem; margin: 0 auto; padding: 1rem; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
   .header-left { display: flex; align-items: center; justify-content: flex-start; gap: 0.75rem; }
   .header-center { display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
@@ -65,8 +73,17 @@ const globalStyles = `
   .topic-pill.active { background: var(--text-main); color: var(--bg-color); }
   .topic-pill:not(.active):hover { background: var(--card-bg); color: var(--text-main); border: 1px solid var(--border); }
   
-  /* Main Content */
-  .app-main { max-width: 48rem; margin: 0 auto; padding: 0 1rem; }
+  /* Main Content Area - Scrollable with Bounce Effect */
+  .app-main { 
+      flex: 1;
+      width: 100%;
+      max-width: 48rem; 
+      margin: 0 auto; 
+      padding: 0 1rem;
+      overflow-y: auto; 
+      overscroll-behavior-y: auto; /* Bounce effect only happens inside this container */
+      -webkit-overflow-scrolling: touch;
+  }
   
   /* --- VERTICAL TREE DIAGRAM LAYOUT --- */
   .timeline-tree-container {
@@ -92,7 +109,7 @@ const globalStyles = `
       box-shadow: 0 4px 10px rgba(0,0,0,0.05);
       transition: all 0.2s;
       position: sticky;
-      top: 150px; /* Sticks just below the header */
+      top: 1rem; /* Sticks exactly 1rem from the top of the scrollable container */
       z-index: 20; /* High z-index to hover over the tree lines and cards */
   }
   .dark .tree-root-btn {
@@ -266,22 +283,23 @@ const globalStyles = `
   /* Timeline Scrubber Overlay */
   .story-scrubber-container {
       position: absolute;
-      top: 1.25rem; /* Align exactly with the progress bars padding top */
+      top: 0; /* Cover the entire top edge to catch touch events easily */
       left: 1rem;
       right: 1rem;
-      height: 0.25rem;
+      height: 3rem; /* Huge hit area for continuous dragging */
       z-index: 35;
       display: flex;
-      align-items: center;
+      align-items: flex-start; /* Align contents near the top */
+      padding-top: 1.125rem; /* Pushes the thumb exactly over the progress bars */
   }
   .story-scrubber {
       -webkit-appearance: none;
       width: 100%;
-      height: 100%;
       background: transparent;
       pointer-events: auto;
       margin: 0;
       cursor: grab;
+      touch-action: none; /* Prevents whole-page scrolling when continuously dragging */
   }
   .story-scrubber:active {
       cursor: grabbing;
@@ -289,22 +307,21 @@ const globalStyles = `
   .story-scrubber:focus { outline: none; }
   .story-scrubber::-webkit-slider-runnable-track { width: 100%; height: 100%; background: transparent; }
   
-  /* Dynamic Thumb - Becomes an oval exactly spanning the active line segment */
+  /* Dynamic Thumb - Becomes a thicker oval exactly spanning the active line segment */
   .story-scrubber::-webkit-slider-thumb {
       -webkit-appearance: none;
-      height: 0.375rem; /* 6px */
+      height: 0.5rem; /* Thicker 8px oval */
       width: var(--thumb-width, 100%);
       border-radius: 999px;
       background: #fff;
       box-shadow: 0 0 5px rgba(0,0,0,0.3);
-      margin-top: -0.0625rem; /* Centers the 6px thumb vertically on the 4px track */
       transition: transform 0.1s;
   }
   .story-scrubber::-webkit-slider-thumb:hover { transform: scaleY(1.2); }
   
   .story-scrubber::-moz-range-track { width: 100%; height: 100%; background: transparent; border: none; }
   .story-scrubber::-moz-range-thumb {
-      height: 0.375rem;
+      height: 0.5rem;
       width: var(--thumb-width, 100%);
       border-radius: 999px;
       background: #fff;
@@ -764,6 +781,7 @@ export default function App() {
               </svg>
             </div>
             <h1 className="header-title">Living History</h1>
+            <span style={{ fontSize: '0.65rem', fontWeight: 'bold', backgroundColor: '#312e81', color: 'white', padding: '0.2rem 0.4rem', borderRadius: '0.25rem', letterSpacing: '0.05em' }}>ALPHA VERSION</span>
           </div>
           <div className="header-right">
             <button className="theme-toggle" onClick={() => setIsDarkMode(!isDarkMode)}>
@@ -842,7 +860,7 @@ export default function App() {
           <div className="about-page-container">
             <h2 className="section-title" style={{textAlign: "left", fontSize: "1.5rem", margin: "0 0 1rem 0"}}>About Living History</h2>
             <p className="about-page-text">
-              This is an experimental AI-powered app that allows the user to navigate through major recent history events on a timeline format, allowing the user to see the big picture. The timeline is organized on a tree structure starting with mayor categories, containing a set of topics, each of which contains a set of related events. Each topic gets updated on a daily basis only if mayor events are found, and branches into sunsequent new topics when encessary.
+              This is an experimental AI-powered app that allows the user to navigate through major recent history events in a timeline format, allowing the user to see the big picture. The timeline is organized in a tree structure starting with major categories, containing a set of topics, each of which contains a set of related events. Each topic gets updated on a daily basis only if major events are found, and branches into subsequent new topics when necessary.
             </p>
           </div>
           
