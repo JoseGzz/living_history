@@ -322,7 +322,9 @@ export default function App() {
   // Navigation State
   const [selectedTopic, setSelectedTopic] = useState('Politics');
   const [selectedSituation, setSelectedSituation] = useState(null);
-  const [currentLayerSituations, setCurrentLayerSituations] = useState([]); // Controls active tree branches
+  
+  // Navigation Stack for robust back/forward tracking
+  const [layerStack, setLayerStack] = useState([]); // [{parent: string | null, situations: string[]}]
   
   // Story State
   const [storyEvents, setStoryEvents] = useState([]);
@@ -367,29 +369,52 @@ export default function App() {
     if (!selectedTopic) return [];
     const filtered = data.filter(item => item.topic_name === selectedTopic);
     const uniqueSituationNames = [...new Set(filtered.map(item => item.situation_name))];
-    const validSituations = new Set(data.map(d => d.situation_name));
+    
+    // Build bidirectional graph mapping to ensure parent-child arrays are perfectly synced
+    const nextMap = new Map();
+    const prevMap = new Map();
+
+    uniqueSituationNames.forEach(name => {
+      nextMap.set(name, new Set());
+      prevMap.set(name, new Set());
+    });
+
+    const validInTopic = new Set(uniqueSituationNames);
+
+    data.forEach(e => {
+      const current = e.situation_name;
+      const prev = e.previous_situation;
+      const next = e.next_situation;
+
+      // If a child declares a parent, link them in BOTH directions
+      if (prev && prev !== current && validInTopic.has(prev) && validInTopic.has(current)) {
+        if (!prevMap.has(current)) prevMap.set(current, new Set());
+        prevMap.get(current).add(prev);
+        
+        if (!nextMap.has(prev)) nextMap.set(prev, new Set());
+        nextMap.get(prev).add(current);
+      }
+
+      // If a parent declares a child, link them in BOTH directions
+      if (next && next !== current && validInTopic.has(next) && validInTopic.has(current)) {
+        if (!nextMap.has(current)) nextMap.set(current, new Set());
+        nextMap.get(current).add(next);
+        
+        if (!prevMap.has(next)) prevMap.set(next, new Set());
+        prevMap.get(next).add(current);
+      }
+    });
 
     const enrichedSituations = uniqueSituationNames.map(name => {
       const evts = filtered.filter(i => i.situation_name === name);
       const item = evts[0];
-      
-      let prevSits = new Set();
-      let nextSits = new Set();
-      evts.forEach(e => {
-        if (e.previous_situation && e.previous_situation !== name && validSituations.has(e.previous_situation)) {
-          prevSits.add(e.previous_situation);
-        }
-        if (e.next_situation && e.next_situation !== name && validSituations.has(e.next_situation)) {
-          nextSits.add(e.next_situation);
-        }
-      });
 
       return { 
         id: item.situation_id, 
         name: name,
         eventCount: evts.length,
-        prevSituations: Array.from(prevSits),
-        nextSituations: Array.from(nextSits),
+        prevSituations: Array.from(prevMap.get(name) || []),
+        nextSituations: Array.from(nextMap.get(name) || []),
         latestDate: new Date(Math.max(...evts.map(e => new Date(e.event_date))))
       };
     });
@@ -397,7 +422,7 @@ export default function App() {
     return enrichedSituations.sort((a, b) => b.latestDate - a.latestDate);
   }, [selectedTopic, data]);
 
-  // Handle Layer Initialization (Defaults to Root Situations)
+  // Handle Layer Initialization using the Stack (Defaults to Root Situations)
   useEffect(() => {
       if (!selectedTopic || situationsForTopic.length === 0) return;
       
@@ -405,43 +430,26 @@ export default function App() {
       const roots = situationsForTopic.filter(s => s.prevSituations.length === 0).map(s => s.name);
       
       if (roots.length > 0) {
-          setCurrentLayerSituations(roots);
+          setLayerStack([{ parent: null, situations: roots }]);
       } else {
           // Fallback if data lacks a clear root
-          setCurrentLayerSituations([situationsForTopic[0].name]);
+          setLayerStack([{ parent: null, situations: [situationsForTopic[0].name] }]);
       }
   }, [selectedTopic, situationsForTopic]);
 
-  const currentLayerAntecedent = useMemo(() => {
-      if (currentLayerSituations.length === 0) return null;
-      const firstSit = situationsForTopic.find(s => s.name === currentLayerSituations[0]);
-      return firstSit?.prevSituations?.[0] || null;
-  }, [currentLayerSituations, situationsForTopic]);
+  const currentLayer = layerStack[layerStack.length - 1] || { parent: null, situations: [] };
+  const currentLayerAntecedent = currentLayer.parent;
+  const currentLayerSituations = currentLayer.situations;
 
   // --- LAYER NAVIGATION (TREE DIAGRAM) ---
   const handleGoBackLayer = useCallback(() => {
-      if (!currentLayerAntecedent) return; 
-      
-      const antecedentData = situationsForTopic.find(s => s.name === currentLayerAntecedent);
-      const parentOfAntecedent = antecedentData?.prevSituations?.[0] || null;
-      
-      // Find antecedent situation along with all of those on the 'same level'
-      const sameLevel = situationsForTopic.filter(s => {
-          if (parentOfAntecedent) return s.prevSituations.includes(parentOfAntecedent);
-          return s.prevSituations.length === 0;
-      }).map(s => s.name);
-      
-      if (sameLevel.length > 0) {
-          setCurrentLayerSituations(sameLevel);
-      } else {
-          setCurrentLayerSituations([currentLayerAntecedent]);
-      }
-  }, [currentLayerAntecedent, situationsForTopic]);
+      setLayerStack(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
+  }, []);
 
   const handleGoForwardLayer = useCallback((situationName) => {
       const sitData = situationsForTopic.find(s => s.name === situationName);
       if (sitData?.nextSituations?.length > 0) {
-          setCurrentLayerSituations(sitData.nextSituations);
+          setLayerStack(prev => [...prev, { parent: situationName, situations: sitData.nextSituations }]);
       }
   }, [situationsForTopic]);
 
@@ -685,7 +693,7 @@ export default function App() {
               title={currentLayerAntecedent ? "Go back to previous situation" : "Root timeline"}
             >
               {currentLayerAntecedent ? <ArrowLeft size={18} /> : <div className="root-dot" />}
-              <span>{currentLayerAntecedent ? currentLayerAntecedent : "Root Topic"}</span>
+              <span>{currentLayerAntecedent ? currentLayerAntecedent : "Root Topics"}</span>
             </button>
             
             {/* Vertically Stacked Branches */}
